@@ -28,8 +28,11 @@ class ChatResponse(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_html():
-    with open("public/index.html", "r") as f:
-        return f.read()
+    try:
+        with open("public/index.html", "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>HTML file not found</h1>"
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
