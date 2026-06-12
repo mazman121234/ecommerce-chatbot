@@ -22,6 +22,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class ChatRequest(BaseModel):
     message: str
+    history: list = []
 
 class ChatResponse(BaseModel):
     response: str
@@ -32,43 +33,61 @@ async def serve_html():
         with open("public/index.html", "r") as f:
             return f.read()
     except FileNotFoundError:
-        return "<h1>HTML file not found</h1>"
+        return "<h1>Error: HTML file not found</h1>"
+    except Exception as e:
+        return f"<h1>Error: {str(e)}</h1>"
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
     try:
+        message = request.message.strip()
+        
+        if not message or len(message) == 0:
+            return ChatResponse(response="Hi! How can I help you today?")
+        
+        if len(message) > 1000:
+            return ChatResponse(response="Message too long. Please keep it under 1000 characters.")
+        
+        messages = [
+            {"role": "system", "content": """You are a helpful shopping assistant for an e-commerce store. Your job is to have natural conversations with customers about shopping.
+
+KEY RULE: Accept and respond naturally to ANYTHING the customer types. Never reject input. Never say "I can only help with shopping questions."
+
+- If they type shopping-related stuff (products, prices, shipping, returns) - answer helpfully
+- If they type a name (john, sarah, john smith) - acknowledge it as their name/account
+- If they type a number (4, 10, 500) - treat it as quantity or order amount
+- If they type random words or gibberish - acknowledge it and stay helpful
+- If they ask unrelated stuff (math, sports, jokes) - respond naturally but gently redirect to shopping
+
+NEVER restart conversations. NEVER show a default greeting mid-conversation. Always continue what they started.
+
+Be conversational, friendly, and flexible. Work with whatever they give you."""}
+        ]
+        
+        if request.history:
+            messages.extend(request.history)
+        
+        messages.append({"role": "user", "content": message})
+        
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": """You are a helpful e-commerce customer service chatbot. Your role is to assist customers with:
-- Product information, features, and specifications
-- Product recommendations based on their needs
-- Availability and stock status
-- Pricing, discounts, and promotions
-- Shipping times and delivery information
-- Order tracking and status
-- Returns, refunds, and exchanges
-- Payment methods and checkout issues
-- Size, color, and variant options
-- Account and login help
-- General shopping questions
-
-If someone asks a question that is NOT related to shopping, products, or our store, politely respond with:
-"I'm here to help with questions about our products, orders, shipping, and returns. How can I assist you with your shopping?"
-
-Be friendly, helpful, and professional. Provide specific product details when asked. For complex issues, offer to connect them with a human representative."""},
-                {"role": "user", "content": request.message}
-            ],
-            max_tokens=500
+            messages=messages,
+            max_tokens=500,
+            temperature=0.9
         )
         
         bot_response = response.choices[0].message.content
         
-        return ChatResponse(response=bot_response)
+        if not bot_response or len(bot_response.strip()) == 0:
+            return ChatResponse(response="I'm here to help! What would you like?")
+        
+        return ChatResponse(response=bot_response.strip())
     
+    except ValueError as e:
+        return ChatResponse(response="Let me help you with that!")
     except Exception as e:
-        return ChatResponse(response=f"Error: {str(e)}")
+        return ChatResponse(response="Sorry, I'm temporarily unavailable. Please try again in a moment.")
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "1.0"}
